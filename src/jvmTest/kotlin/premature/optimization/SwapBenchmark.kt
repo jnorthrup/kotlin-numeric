@@ -1,205 +1,206 @@
-package premature.optimization;
+@file:OptIn(ExperimentalTime::class)
 
-import java.nio.IntBuffer;
-import java.util.*;
+package premature.optimization
 
+import java.nio.IntBuffer
+import java.util.concurrent.ThreadLocalRandom
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.time.ExperimentalTime
+import kotlin.time.TimeSource
 
-public class SwapBenchmark {
-    static Random random = new Random();
+/**
+ * "Bubble" swap elevator testing `if (last != first) throw Error("swap elevator fail")`
+ */
+class SwapBenchmarkTest {
 
-    public static void main(String[] args) {
-        for (var rep = 1; rep < 11; rep++) {
-            Comparator<Map.Entry> entryComparator = (entry, t1) -> (int) ((long) entry.getValue() - (long) t1.getValue());
-            for (var digits = 6; digits < 10; digits += 1) {
-                ArrayList<Map.Entry<Swapper, Long>> entries = new ArrayList<>();
-                var size = (int) Double.parseDouble("1E" + digits);
-                var x = new int[size];
-                for (var i = 0; i < x.length; i++) x[i] = random.nextInt();
-                for (var swapper : Swapper.values()) {
-                    final var first = x[0];
-                    var begin = System.currentTimeMillis();
-                    swapper.swap(x);
-                    var last = x[size - 1];
-                    if (last != first) throw new Error("swap elevator fail");
-                    var l = System.currentTimeMillis() - begin;
-                    entries.add(new AbstractMap.SimpleEntry<>(swapper, l));
+    @Test
+    fun testSwapping() {
+        for (rep in 1..10) {
+            println(
+                "\n$rep+++++++++++++++++++++++\n$rep+++++++++++++++++++++++\n$rep+++++++++++++++++++++++\n" +
+                        "$rep+++++++++++++++++++++++\n$rep+++++++++++++++++++++++\n"
+            )
 
+            var digits = 6
+            while (digits < 10) {
+                val size = "1E$digits".toDouble().toInt()
+                val current = ThreadLocalRandom.current()
+                val x = IntArray(size) { current.nextInt() }
+                val entries: List<Pair<Swapper, Long>> = Swapper.values().map { swapper ->
+                    val first = x[0]
+                    val begin = TimeSource.Monotonic.markNow()
+                    swapper.swap(x)
+                    val last = x[size - 1]
+                    val l = begin.elapsedNow().inWholeNanoseconds
+                    assertEquals(last, first, "swap elevator failed in $swapper")
+                    swapper to l
                 }
-
-                entries.sort(entryComparator);
-                System.err.println("---- for " + size);
-                for (Map.Entry<Swapper, Long> entry : entries) {
-                    Swapper key = entry.getKey();
-                    Long value = entry.getValue();
-                    System.err.println(key + ": " + size + ":  " + value + " @" + (double) size / value + "/ms");
+                println("---- for $size")
+                entries.sortedBy { it.second }.forEach { (key, value) ->
+                    println(
+                        "$key: $size:  ${value}\t${(
+                                size.toDouble() /
+                                        value * 1000
+                                ).toString().take(7)}iter/ms\t" +
+                                "${value.toDouble() / size.toDouble()}ns/ea"
+                    )
                 }
-                System.err.println();
+                digits += 1
             }
         }
     }
 
+    internal enum class Swapper {
 
-    enum Swapper {
+        /**
+         * creates a long, and pushes to it and swaps and pulls from it.
+         *
+         * shows an overhead only, over the same swap code without the bitops
+         */
+        r64shift {
+            override fun swap(x: IntArray) {
+                for (i in 0 until x.size - 1) {
+                    val j = i + 1
+                    val t = x[i].toLong() and 0xffff_ffffL shl 32 or ((x[j].toLong() and 0xffff_ffffL))
+                    x[i] = (t and 0xffff_ffffL).toInt()
+                    x[j] = (t ushr 32).toInt()
+                }
+            }
+        },
+
         /**
          * xor swap
          */
-        xor_swap() {
-            void swap(int[] x) {
-                for (var i = 0; i < x.length - 1; i++) {
-                    final var j = i + 1;
-                    x[i] ^= x[j];
-                    x[j] ^= x[i];
-                    x[i] ^= x[j];
+        xor_swap {
+            override fun swap(x: IntArray) {
+                for (i in 0 until x.size - 1) {
+                    val j = i + 1
+                    x[i] = x[i] xor x[j]
+                    x[j] = x[j] xor x[i]
+                    x[i] = x[i] xor x[j]
                 }
             }
         },
-        /**
-         * creates a long, and pushes to it
-         */
-        r64shift {
-            @Override
-            void swap(int[] x) {
-                for (var i = 0; i < x.length - 1; i++) {
-                    final var j = i + 1;
-                    var t = ((long) x[i] & 0xffff_ffffL) << 32 | (x[j] & 0xffff_ffffL);
-                    x[i] = (int) (t & 0xffff_ffffL);
-                    x[j] = (int) (t >>> 32);
-                    assert x[i] == x[j];
-                    assert x[j] == x[i];
-                }
-            }
-        },
+
         /**
          * creates a tmp, swaps two array items
          */
         tmp1swap {
-            @Override
-            void swap(int[] x) {
-                for (var i = 0; i < x.length - 1; i++) {
-                    final var j = i + 1;
-                    final var t = x[i];
-                    x[i] = x[j];
-                    x[j] = t;
+            override fun swap(x: IntArray) {
+                for (i in 0 until x.size - 1) {
+                    val j = i + 1
+                    val t = x[i]
+                    x[i] = x[j]
+                    x[j] = t
                 }
             }
         },
+
         /**
          * creates 2 tmps, swaps two array items
          */
         tmp2swap {
-            @Override
-            void swap(int[] x) {
-                for (var i = 0; i < x.length - 1; i++) {
-                    final var j = i + 1;
-                    final var x1 = x[j];
-                    final var t = x[i];
-                    x[i] = x1;
-                    x[j] = t;
+            override fun swap(x: IntArray) {
+                for (i in 0 until x.size - 1) {
+                    val j = i + 1
+                    val x1 = x[j]
+                    val t = x[i]
+                    x[i] = x1
+                    x[j] = t
                 }
             }
         },
+
         /**
-         * we get some kind of optimization from creating two temps and swapping them and writing them, ony my cpu slightly tweaked by the read and write order from the array.
+         * we get some kind of optimization from creating two temps and swapping them and writing them, on my (skylake)
+         * cpu slightly tweaked by the read and write order from the array.
          */
         xor_tmps {
-            @Override
-            void swap(int[] x) {
-                for (var i = 0; i < x.length - 1; i++) {
-                    final var j = i + 1;
-//                    int v2, x2 =v2= x[j];
-//                    int v1, x1 =v1= x[i];
-                    var x2 = x[j];
-                    var x1 = x[i];
-                    x1 ^= x2;
-                    x2 ^= x1;
-                    x1 ^= x2;
-                    x[i] = x1;
-                    x[j] = x2;
-//                    assert v1 == x[j];
-//                    assert v2 == x[i];
+            override fun swap(x: IntArray) {
+                for (i in 0 until x.size - 1) {
+                    val j = i + 1
+                    var x2 = x[j]
+                    var x1 = x[i]
+                    x1 = x1 xor x2
+                    x2 = x2 xor x1
+                    x1 = x1 xor x2
+                    x[i] = x1
+                    x[j] = x2
                 }
             }
         },
+
         /**
          * heapbytebuffer random access get and put.  roughly the same as tmp swap
          */
-        hbb_racc {
-            void swap(int[] x) {
-                var wrap = IntBuffer.wrap(x);
-                for (var i = 0; i < x.length - 1; i++) {
-                    final var j = i + 1;
-                    var xi = wrap.get(i);
-                    wrap.put(i, wrap.get(j));
-                    wrap.put(j, xi);
+        hib_racc {
+            override fun swap(x: IntArray) {
+                val wrap = IntBuffer.wrap(x)
+                for (i in 0 until x.size - 1) {
+                    val j = i + 1
+                    val xi = wrap[i]
+                    wrap.put(i, wrap[j])
+                    wrap.put(j, xi)
                 }
             }
         },
+
         /**
          * heapbytebuffer using mark and rewind naively
          */
-        hbb_mark {
-            void swap(int[] x) {
-//                int l1 = x[0];
-//                int li = x[x.length - 2];
-//                int lj = x[x.length - 1];
-                var wrap = IntBuffer.wrap(x).mark();
+        hib_mark {
+            override fun swap(x: IntArray) {
+                val wrap = IntBuffer.wrap(x).mark() as IntBuffer
                 while (wrap.remaining() > 1) {
-                    var i = wrap.mark().get();
-                    var j = wrap.get();
-                    wrap.reset();
-                    wrap.put(j);
-                    wrap.mark().put(i).reset();
+                    val i = (wrap.mark() as IntBuffer).get()
+                    val j = wrap.get()
+                    wrap.reset()
+                    wrap.put(j)
+                    (wrap.mark() as IntBuffer).put(i).reset()
                 }
             }
         },
+
         /**
          * heap bytebuffer calling position instead of mark
          */
-        hbb_cpos {
-            void swap(int[] x) {
-//                int l1 = x[0];
-//                int li = x[x.length - 2];
-//                int lj = x[x.length - 1];
-                var wrap = IntBuffer.wrap(x);
+        hib_cpos {
+            override fun swap(x: IntArray) {
+                val wrap: IntBuffer = IntBuffer.wrap(x)
                 while (wrap.remaining() > 1) {
-                    var mark = wrap.position();
-                    var i = wrap.get();
-                    var j = wrap.get();
-                    wrap.position(mark).put(j);
-                    wrap.put(i).position(mark + 1);
+                    val mark = wrap.position()
+                    val i = wrap.get()
+                    val j = wrap.get()
+                    (wrap.position(mark) as IntBuffer).put(j)
+                    wrap.put(i).position(mark + 1)
                 }
             }
         },
+
         /**
          * 4 forward moving get/put heapbytebuffers particular to this benchmark
          */
-        hbb_4way {
-            void swap(int[] x) {
+        hib_4way {
+            override fun swap(x: IntArray) {
+                val write2 = IntBuffer.wrap(x)
+                val write1 = write2.slice()
+                val lead = write2.slice()
+                val trail = write2.slice()
+                lead.position(1)
+                write2.position(1)
 
-//                int l1 = x[0];
-//                int li = x[x.length - 2];
-//                int lj = x[x.length - 1];
-                var write2 = IntBuffer.wrap(x);
-                var write1 = write2.slice();
-
-                var lead = write2.slice();
-                var trail = write2.slice();
-
-                lead.position(1);
-                write2.position(1);
-                var i = 0;
-                var j = 0;
-                while (write2.remaining() > 0) {
-                    i = lead.get();
-                    j = trail.get();
-                    write1.put(i);
-                    write2.put(j);
+                var i: Int
+                var j: Int
+                while (write2.remaining() > 0/*hasRemaining()*/) {
+                    i = lead.get()
+                    j = trail.get()
+                    write1.put(i)
+                    write2.put(j)
                 }
-//                int x1 = x[x.length - 1];
-//                System.err.println(Arrays.asList(i,j, x1));
             }
         };
 
-        abstract void swap(int[] x);
+        abstract fun swap(x: IntArray)
     }
 }
