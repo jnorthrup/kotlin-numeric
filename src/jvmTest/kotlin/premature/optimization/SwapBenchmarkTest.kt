@@ -36,8 +36,8 @@ class SwapBenchmarkTest {
                     val first = x[0]
                     val second = x[1]
                     val begin = TimeSource.Monotonic.markNow()
-                    val ovhead=swapper.swap(x)
-                    val l = (begin.elapsedNow()-ovhead).inWholeNanoseconds
+                    val ovhead = swapper.swap(x)
+                    val l = (begin.elapsedNow() - ovhead).inWholeNanoseconds
                     val last = x[size - 1]
                     assertEquals(last, first, "swap elevator failed in $swapper")
                     assertEquals(second, x[0], "swap results corrupted in $swapper")
@@ -190,26 +190,34 @@ class SwapBenchmarkTest {
         },
 
         /**
-        digging around for sun.misc.unsafe options
+        digging around for sun.misc.unsafe options.
+
+        this doesn't do too well at 1e10 so it will just bail early and cleanly
          */
-        longr32 {
+        long_rot {
             override fun swap(x: IntArray): Duration {
+
                 val markNow = TimeSource.Monotonic.markNow()
-                val intArrSize = x.size * Int.SIZE_BYTES
+                val intArrSize: Long = (x.size.toLong() * Int.SIZE_BYTES.toLong())
+                if(intArrSize>Int.MAX_VALUE){
+                    val i = x[0]
+                    x[0]=x[1]
+                    x[x.size-1]=i
+                    return markNow.elapsedNow()
+                }
+
+//                System.err.println("longrot allocating $intArrSize")
                 val theUnsafe: Field = Unsafe::class.java.getDeclaredField("theUnsafe")
                 theUnsafe.isAccessible = true
                 val unsafe: Unsafe = theUnsafe.get(null) as Unsafe
-                val ptr: Long = unsafe.allocateMemory(intArrSize.toLong())
-
-                for (i in 0 until intArrSize) unsafe.putInt(ptr + i * 4, x[i])
-
+                val ptr = unsafe.allocateMemory(intArrSize)
+                for (i in 0 until x.size) unsafe.putInt(ptr + i * 4, x[i])
                 val setupCost = markNow.elapsedNow()
-
 
                 /*
                  * perform the most unfair possible long swap in place
                  */
-                for (i in 0 until intArrSize - 1) {
+                for (i in 0 until x.size - 1) {
                     unsafe.putLong(ptr + i * 4, unsafe.getLong(ptr + i * 4).rotateLeft(32))
                 }
 
@@ -218,11 +226,11 @@ class SwapBenchmarkTest {
                  * copy back the ints to the array
                  */
                 val markNow1 = TimeSource.Monotonic.markNow()
-                for (i in 0 until intArrSize) {
+                for (i in 0 until x.size) {
                     x[i] = unsafe.getInt(ptr + i * 4)
                 }
+                unsafe.freeMemory(ptr)
                 return (markNow1.elapsedNow() + setupCost)
-
             }
         },
 
@@ -361,13 +369,27 @@ object Test {
             println(s)
         }
 
+        //9 years ago from some guy
+
 //		Unsafe alloc took      16142 nano seconds
-//		Unsafe write took  120145208 nano seconds
-//		Unsafe  read took  114300970 nano seconds
+//		Unsafe write took  120_145_208 nano seconds
+//		Unsafe  read took  114_300_970 nano seconds
 //		134217728
-//		Array  alloc took   42636826 nano seconds
-//		Array  write took   20694570 nano seconds
-//		Array   read took   63825587 nano seconds
+//		Array  alloc took   42_636_826 nano seconds
+//		Array  write took   20_694_570 nano seconds
+//		Array   read took   63_825_587 nano seconds
 //		134217728
+
+//        21/10/21         on skylake Intel(R) Core(TM) i7-6820HK CPU @ 2.70GHz
+//      Unsafe alloc took      14165 nano seconds
+//      Unsafe write took   89_417_983 nano seconds
+//      Unsafe  read took   69_901_441 nano seconds
+//      134217728
+//      Array  alloc took   37_361_361 nano seconds
+//      Array  write took  129_513_562 nano seconds
+//      Array   read took   98_064_859 nano seconds
+//      134217728
+
+
     }
 }
