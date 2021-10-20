@@ -24,7 +24,7 @@ class SwapBenchmarkTest {
         for (rep in 1..10) {
             println(
                 "\n$rep+++++++++++++++++++++++\n$rep+++++++++++++++++++++++\n$rep+++++++++++++++++++++++\n" +
-                        "$rep+++++++++++++++++++++++\n$rep+++++++++++++++++++++++\n"
+                    "$rep+++++++++++++++++++++++\n$rep+++++++++++++++++++++++\n"
             )
 
             var digits = 6
@@ -38,16 +38,18 @@ class SwapBenchmarkTest {
                     val begin = TimeSource.Monotonic.markNow()
                     val ovhead = swapper.swap(x)
                     val l = (begin.elapsedNow() - ovhead).inWholeNanoseconds
-                    val last = x[size - 1]
+                    val last = x[size.dec()]
                     assertEquals(last, first, "swap elevator failed in $swapper")
                     assertEquals(second, x[0], "swap results corrupted in $swapper")
                     swapper to l
                 }
                 println("---- for $size")
                 entries.sortedBy { it.second }.forEach { (key, value) ->
-                    println("$key: $size:  ${value}\t${
+                    println(
+                        "$key: $size:  ${value}\t${
                         (size.toDouble() / value * 1000).toString().take(7)
-                    }iter/ms\t${value.toDouble() / size.toDouble()}ns/ea")
+                        }iter/ms\t${value.toDouble() / size.toDouble()}ns/ea"
+                    )
                 }
                 digits += 1
             }
@@ -63,8 +65,8 @@ class SwapBenchmarkTest {
          */
         r64shift {
             override fun swap(x: IntArray): Duration {
-                for (i in 0 until x.size - 1) {
-                    val j = i + 1
+                for (i in 0 until x.size.dec()) {
+                    val j = i.inc()
                     val t = x[i].toLong() and 0xffff_ffffL shl 32 or ((x[j].toLong() and 0xffff_ffffL))
                     x[i] = (t and 0xffff_ffffL).toInt()
                     x[j] = (t ushr 32).toInt()
@@ -78,8 +80,8 @@ class SwapBenchmarkTest {
          */
         xor_swap {
             override fun swap(x: IntArray): Duration {
-                for (i in 0 until x.size - 1) {
-                    val j = i + 1
+                for (i in 0 until x.size.dec()) {
+                    val j = i.inc()
                     x[i] = x[i] xor x[j]
                     x[j] = x[j] xor x[i]
                     x[i] = x[i] xor x[j]
@@ -93,8 +95,8 @@ class SwapBenchmarkTest {
          */
         sub_swap {
             override fun swap(x: IntArray): Duration {
-                for (i in 0 until x.size - 1) {
-                    val j = i + 1
+                for (i in 0 until x.size.dec()) {
+                    val j = i.inc()
                     x[i] = x[i] + x[j]
                     x[j] = x[i] - x[j]
                     x[i] = x[i] - x[j]
@@ -108,8 +110,8 @@ class SwapBenchmarkTest {
          */
         tmp1swap {
             override fun swap(x: IntArray): Duration {
-                for (i in 0 until x.size - 1) {
-                    val j = i + 1
+                for (i in 0 until x.size.dec()) {
+                    val j = i.inc()
                     val t = x[i]
                     x[i] = x[j]
                     x[j] = t
@@ -124,15 +126,14 @@ class SwapBenchmarkTest {
         tmp2swap {
             override fun swap(x: IntArray): Duration {
 
-                for (i in 0 until x.size - 1) {
-                    val j = i + 1
-                    val x1 = x[j]
+                for (i in 0 until x.size.dec()) {
                     val t = x[i]
+                    val j = i.inc()
+                    val x1 = x[j]
                     x[i] = x1
                     x[j] = t
                 }
                 return Duration.ZERO
-
             }
         },
 
@@ -142,9 +143,9 @@ class SwapBenchmarkTest {
          */
         xor_tmps {
             override fun swap(x: IntArray): Duration {
-                for (i in 0 until x.size - 1) {
-                    val j = i + 1
+                for (i in 0 until x.size.dec()) {
                     var x1 = x[i]
+                    val j = i.inc()
                     var x2 = x[j]
                     x1 = x1 xor x2
                     x2 = x2 xor x1
@@ -157,9 +158,9 @@ class SwapBenchmarkTest {
         },
         xor_vals {
             override fun swap(x: IntArray): Duration {
-                for (i in 0 until x.size - 1) {
-                    val j = i + 1
+                for (i in 0 until x.size.dec()) {
                     val x1 = x[i]
+                    val j = i.inc()
                     val x2 = x[j]
                     val y1 = x1 xor x2
                     val y2 = x2 xor y1
@@ -179,9 +180,9 @@ class SwapBenchmarkTest {
                 val markNow = TimeSource.Monotonic.markNow()
                 val wrap: IntBuffer = IntBuffer.wrap(x)
                 return markNow.elapsedNow().also {
-                    for (i in 0 until x.size - 1) {
-                        val j = i + 1
+                    for (i in 0 until x.size.dec()) {
                         val xi = wrap[i]
+                        val j = i.inc()
                         wrap.put(i, wrap[j])
                         wrap.put(j, xi)
                     }
@@ -190,19 +191,19 @@ class SwapBenchmarkTest {
         },
 
         /**
-        digging around for sun.misc.unsafe options.
+         digging around for sun.misc.unsafe options.
 
-        this doesn't do too well at 1e10 so it will just bail early and cleanly
+         this doesn't do too well at 1e10 so it will just bail early and cleanly
          */
         long_rot {
             override fun swap(x: IntArray): Duration {
 
                 val markNow = TimeSource.Monotonic.markNow()
                 val intArrSize: Long = (x.size.toLong() * Int.SIZE_BYTES.toLong())
-                if(intArrSize>Int.MAX_VALUE){
+                if (intArrSize> Int.MAX_VALUE) {
                     val i = x[0]
-                    x[0]=x[1]
-                    x[x.size-1]=i
+                    x[0] = x[1]
+                    x[x.size - 1] = i
                     return markNow.elapsedNow()
                 }
 
@@ -211,16 +212,16 @@ class SwapBenchmarkTest {
                 theUnsafe.isAccessible = true
                 val unsafe: Unsafe = theUnsafe.get(null) as Unsafe
                 val ptr = unsafe.allocateMemory(intArrSize)
-                for (i in 0 until x.size) unsafe.putInt(ptr + i * 4, x[i])
+                for (i in 0 until x.size) unsafe.putInt(ptr + i * Int.SIZE_BYTES, x[i])
                 val setupCost = markNow.elapsedNow()
 
                 /*
                  * perform the most unfair possible long swap in place
                  */
-                for (i in 0 until x.size - 1) {
-                    unsafe.putLong(ptr + i * 4, unsafe.getLong(ptr + i * 4).rotateLeft(32))
+                for (i in 0 until x.size.dec()) {
+                    val l = ptr + i * Int.SIZE_BYTES
+                    unsafe.putLong(l, unsafe.getLong(l).rotateLeft(32))
                 }
-
 
                 /*
                  * copy back the ints to the array
@@ -242,7 +243,7 @@ class SwapBenchmarkTest {
                 val markNow = TimeSource.Monotonic.markNow()
                 val wrap: IntBuffer = IntBuffer.wrap(x)
                 return markNow.elapsedNow().also {
-                    while (wrap.remaining() > 1) {
+                    for (i in 0 until x.size.dec()) {
                         val i = (wrap.mark() as IntBuffer).get()
                         val j = wrap.get()
                         wrap.reset()
@@ -262,12 +263,11 @@ class SwapBenchmarkTest {
                 val wrap: IntBuffer = IntBuffer.wrap(x)
                 val ret = markNow.elapsedNow()
 
-                while (wrap.remaining() > 1) {
-                    val mark = wrap.position()
-                    val i = wrap.get()
+                for (mark in 0 until x.size - 1) {
+                    val i = wrap.position(mark).get()
                     val j = wrap.get()
                     (wrap.position(mark) as IntBuffer).put(j)
-                    wrap.put(i).position(mark + 1)
+                    wrap.put(i)
                 }
                 return ret
             }
@@ -283,23 +283,21 @@ class SwapBenchmarkTest {
                 val write1 = write2.slice()
                 val lead = write2.slice()
                 val trail = write2.slice()
-                val ret = markNow.elapsedNow()
-
                 lead.position(1)
                 write2.position(1)
-
                 var i: Int
                 var j: Int
-                while (write2.remaining() > 0/*hasRemaining()*/) {
-                    i = lead.get()
+                val ret = markNow.elapsedNow()
+
+                repeat(x.size.dec()) {
                     j = trail.get()
+                    i = lead.get()
                     write1.put(i)
                     write2.put(j)
                 }
                 return ret
             }
         };
-
 
         /**
          * we will add setup/teardown expenses as a return value.
@@ -318,10 +316,12 @@ class SwapBenchmarkTest {
 object Test {
     private const val N = 128 * 1024 * 1024
 
-    @Throws(NoSuchFieldException::class,
+    @Throws(
+        NoSuchFieldException::class,
         SecurityException::class,
         IllegalArgumentException::class,
-        IllegalAccessException::class)
+        IllegalAccessException::class
+    )
     @JvmStatic
     fun main(args: Array<String>) {
         run {
@@ -369,16 +369,16 @@ object Test {
             println(s)
         }
 
-        //9 years ago from some guy
+        // 9 years ago from some guy
 
-//		Unsafe alloc took      16142 nano seconds
-//		Unsafe write took  120_145_208 nano seconds
-//		Unsafe  read took  114_300_970 nano seconds
-//		134217728
-//		Array  alloc took   42_636_826 nano seconds
-//		Array  write took   20_694_570 nano seconds
-//		Array   read took   63_825_587 nano seconds
-//		134217728
+// 		Unsafe alloc took      16142 nano seconds
+// 		Unsafe write took  120_145_208 nano seconds
+// 		Unsafe  read took  114_300_970 nano seconds
+// 		134217728
+// 		Array  alloc took   42_636_826 nano seconds
+// 		Array  write took   20_694_570 nano seconds
+// 		Array   read took   63_825_587 nano seconds
+// 		134217728
 
 //        21/10/21         on skylake Intel(R) Core(TM) i7-6820HK CPU @ 2.70GHz
 //      Unsafe alloc took      14165 nano seconds
@@ -389,7 +389,5 @@ object Test {
 //      Array  write took  129_513_562 nano seconds
 //      Array   read took   98_064_859 nano seconds
 //      134217728
-
-
     }
 }
