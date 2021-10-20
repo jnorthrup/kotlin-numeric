@@ -2,6 +2,7 @@
 
 package premature.optimization
 
+import org.junit.jupiter.api.Disabled
 import java.nio.IntBuffer
 import java.util.concurrent.ThreadLocalRandom
 import kotlin.test.Test
@@ -15,11 +16,12 @@ import kotlin.time.TimeSource
 class SwapBenchmarkTest {
 
     @Test
+    @Disabled
     fun testSwapping() {
         for (rep in 1..10) {
             println(
                 "\n$rep+++++++++++++++++++++++\n$rep+++++++++++++++++++++++\n$rep+++++++++++++++++++++++\n" +
-                        "$rep+++++++++++++++++++++++\n$rep+++++++++++++++++++++++\n"
+                    "$rep+++++++++++++++++++++++\n$rep+++++++++++++++++++++++\n"
             )
 
             var digits = 6
@@ -29,21 +31,25 @@ class SwapBenchmarkTest {
                 val x = IntArray(size) { current.nextInt() }
                 val entries: List<Pair<Swapper, Long>> = Swapper.values().map { swapper ->
                     val first = x[0]
+                    val second = x[1]
                     val begin = TimeSource.Monotonic.markNow()
                     swapper.swap(x)
-                    val last = x[size - 1]
                     val l = begin.elapsedNow().inWholeNanoseconds
+                    val last = x[size - 1]
                     assertEquals(last, first, "swap elevator failed in $swapper")
+                    assertEquals(second, x[0], "swap results corrupted in $swapper")
                     swapper to l
                 }
                 println("---- for $size")
                 entries.sortedBy { it.second }.forEach { (key, value) ->
                     println(
-                        "$key: $size:  ${value}\t${(
-                                size.toDouble() /
-                                        value * 1000
-                                ).toString().take(7)}iter/ms\t" +
-                                "${value.toDouble() / size.toDouble()}ns/ea"
+                        "$key: $size:  ${value}\t${
+                        (
+                            size.toDouble() /
+                                value * 1000
+                            ).toString().take(7)
+                        }iter/ms\t" +
+                            "${value.toDouble() / size.toDouble()}ns/ea"
                     )
                 }
                 digits += 1
@@ -79,6 +85,20 @@ class SwapBenchmarkTest {
                     x[i] = x[i] xor x[j]
                     x[j] = x[j] xor x[i]
                     x[i] = x[i] xor x[j]
+                }
+            }
+        },
+
+        /**
+         * subtraction swap
+         */
+        sub_swap {
+            override fun swap(x: IntArray) {
+                for (i in 0 until x.size - 1) {
+                    val j = i + 1
+                    x[i] = x[i] + x[j]
+                    x[j] = x[i] - x[j]
+                    x[i] = x[i] - x[j]
                 }
             }
         },
@@ -120,13 +140,27 @@ class SwapBenchmarkTest {
             override fun swap(x: IntArray) {
                 for (i in 0 until x.size - 1) {
                     val j = i + 1
-                    var x2 = x[j]
                     var x1 = x[i]
+                    var x2 = x[j]
                     x1 = x1 xor x2
                     x2 = x2 xor x1
                     x1 = x1 xor x2
                     x[i] = x1
                     x[j] = x2
+                }
+            }
+        },
+        xor_vals {
+            override fun swap(x: IntArray) {
+                for (i in 0 until x.size - 1) {
+                    val j = i + 1
+                    val x1 = x[i]
+                    val x2 = x[j]
+                    val y1 = x1 xor x2
+                    val y2 = x2 xor y1
+                    val z1 = y1 xor y2
+                    x[i] = z1
+                    x[j] = y2
                 }
             }
         },
@@ -202,5 +236,12 @@ class SwapBenchmarkTest {
         };
 
         abstract fun swap(x: IntArray)
+    }
+
+    companion object {
+        @JvmStatic
+        fun main(args: Array<String>) {
+            SwapBenchmarkTest().testSwapping()
+        }
     }
 }
